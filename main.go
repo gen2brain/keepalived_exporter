@@ -19,7 +19,8 @@ var version, commit, date string
 func main() {
 	listenAddr := flag.String("web.listen-address", ":9650", "Address to listen on for web interface and telemetry.")
 	metricsPath := flag.String("web.telemetry-path", "/metrics", "A path under which to expose metrics.")
-	appVersion := flag.Bool("version", false, "Display version information")
+	keepalivedJson := flag.Bool("ka.json", false, "Send SIGJSON and decode JSON file instead of parsing text files.")
+	appVersion := flag.Bool("version", false, "Display version information.")
 
 	flag.Parse()
 
@@ -30,7 +31,7 @@ func main() {
 
 	registry := prometheus.NewRegistry()
 
-	if coll, err := collector.NewKACollector(); err == nil {
+	if coll, err := collector.NewKACollector(*keepalivedJson); err == nil {
 		registry.MustRegister(coll)
 	} else {
 		log.Fatal(err)
