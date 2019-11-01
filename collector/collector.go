@@ -32,11 +32,19 @@ const (
 )
 
 // States map.
-var states = map[string]int{
+var string2state = map[string]int{
 	"INIT":   Init,
 	"BACKUP": Backup,
 	"MASTER": Master,
 	"FAULT":  Fault,
+}
+
+// States map.
+var state2string = map[int]string{
+	Init:   "INIT",
+	Backup: "BACKUP",
+	Master: "MASTER",
+	Fault:  "FAULT",
 }
 
 // KAStats type.
@@ -86,7 +94,7 @@ func NewKACollector(useJSON bool) (*KACollector, error) {
 	coll := &KACollector{}
 	coll.useJSON = useJSON
 
-	labelsVrrp := []string{"name", "intf", "vrid"}
+	labelsVrrp := []string{"name", "intf", "vrid", "state"}
 	metrics := map[string]*prometheus.Desc{
 		"keepalived_up":                       prometheus.NewDesc("keepalived_up", "Status", nil, nil),
 		"keepalived_vrrp_advert_rcvd":         prometheus.NewDesc("keepalived_vrrp_advert_rcvd", "Advertisements received", labelsVrrp, nil),
@@ -160,34 +168,39 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 1)
 
 	for _, st := range kaStats {
+		state := ""
+		if _, ok := state2string[st.Data.State]; ok {
+			state = state2string[st.Data.State]
+		}
+
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_rcvd"], prometheus.CounterValue,
-			float64(st.Stats.AdvertRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AdvertRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_sent"], prometheus.CounterValue,
-			float64(st.Stats.AdvertSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AdvertSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_become_master"], prometheus.CounterValue,
-			float64(st.Stats.BecomeMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.BecomeMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_release_master"], prometheus.CounterValue,
-			float64(st.Stats.ReleaseMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.ReleaseMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_packet_len_err"], prometheus.CounterValue,
-			float64(st.Stats.PacketLenErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.PacketLenErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_interval_err"], prometheus.CounterValue,
-			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_ip_ttl_err"], prometheus.CounterValue,
-			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_invalid_type_rcvd"], prometheus.CounterValue,
-			float64(st.Stats.InvalidTypeRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.InvalidTypeRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_addr_list_err"], prometheus.CounterValue,
-			float64(st.Stats.AddrListErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AddrListErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_invalid_authtype"], prometheus.CounterValue,
-			float64(st.Stats.InvalidAuthtype), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.InvalidAuthtype), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_authtype_mismatch"], prometheus.CounterValue,
-			float64(st.Stats.AuthtypeMismatch), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AuthtypeMismatch), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_auth_failure"], prometheus.CounterValue,
-			float64(st.Stats.AuthFailure), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.AuthFailure), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_pri_zero_rcvd"], prometheus.CounterValue,
-			float64(st.Stats.PriZeroRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.PriZeroRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_pri_zero_sent"], prometheus.CounterValue,
-			float64(st.Stats.PriZeroSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid))
+			float64(st.Stats.PriZeroSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 	}
 
 	if k.handle == nil {
@@ -390,11 +403,11 @@ func (k *KACollector) parseData() ([]Data, error) {
 
 				dt.Vrid = id
 			case "State":
-				if state, ok := states[val]; ok {
+				if state, ok := string2state[val]; ok {
 					dt.State = state
 				}
 			case "Wantstate":
-				if state, ok := states[val]; ok {
+				if state, ok := string2state[val]; ok {
 					dt.Wantstate = state
 				}
 			}
