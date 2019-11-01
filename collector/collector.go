@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mqliang/libipvs"
+	"github.com/docker/libnetwork/ipvs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/process"
 )
@@ -77,7 +77,7 @@ type Stats struct {
 type KACollector struct {
 	useJSON bool
 	metrics map[string]*prometheus.Desc
-	handle  libipvs.IPVSHandle
+	handle  *ipvs.Handle
 	mutex   sync.Mutex
 }
 
@@ -105,7 +105,7 @@ func NewKACollector(useJSON bool) (*KACollector, error) {
 		"keepalived_vrrp_pri_zero_sent":       prometheus.NewDesc("keepalived_vrrp_pri_zero_sent", "Priority zero sent", labelsVrrp, nil),
 	}
 
-	if handle, err := libipvs.New(); err == nil {
+	if handle, err := ipvs.New(""); err == nil {
 		labelsLVS := []string{"addr", "proto"}
 		metrics["keepalived_lvs_vip_in_packets"] = prometheus.NewDesc("keepalived_lvs_vip_in_packets", "VIP in packets", labelsLVS, nil)
 		metrics["keepalived_lvs_vip_out_packets"] = prometheus.NewDesc("keepalived_lvs_vip_out_packets", "VIP out packets", labelsLVS, nil)
@@ -194,7 +194,7 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	svcs, err := k.handle.ListServices()
+	svcs, err := k.handle.GetServices()
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
 		log.Printf("keepalived_exporter: %v", err)
@@ -202,38 +202,39 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for _, s := range svcs {
-		dsts, err := k.handle.ListDestinations(s)
+		dsts, err := k.handle.GetDestinations(s)
 		if err != nil {
 			log.Printf("keepalived_exporter: %v", err)
 			continue
 		}
 
 		addr := s.Address.String() + ":" + strconv.Itoa(int(s.Port))
+		proto := strconv.Itoa(int(s.Protocol))
 
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_in_packets"], prometheus.CounterValue,
-			float64(s.Stats.PacketsIn), addr, s.Protocol.String())
+			float64(s.Stats.PacketsIn), addr, proto)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_out_packets"], prometheus.CounterValue,
-			float64(s.Stats.PacketsOut), addr, s.Protocol.String())
+			float64(s.Stats.PacketsOut), addr, proto)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_in_bytes"], prometheus.CounterValue,
-			float64(s.Stats.BytesIn), addr, s.Protocol.String())
+			float64(s.Stats.BytesIn), addr, proto)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_out_bytes"], prometheus.CounterValue,
-			float64(s.Stats.BytesOut), addr, s.Protocol.String())
+			float64(s.Stats.BytesOut), addr, proto)
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_conn"], prometheus.CounterValue,
-			float64(s.Stats.Connections), addr, s.Protocol.String())
+			float64(s.Stats.Connections), addr, proto)
 
 		for _, d := range dsts {
 			addr := d.Address.String() + ":" + strconv.Itoa(int(d.Port))
 
 			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_in_packets"], prometheus.CounterValue,
-				float64(d.Stats.PacketsIn), addr, s.Protocol.String())
+				float64(d.Stats.PacketsIn), addr, proto)
 			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_out_packets"], prometheus.CounterValue,
-				float64(d.Stats.PacketsOut), addr, s.Protocol.String())
+				float64(d.Stats.PacketsOut), addr, proto)
 			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_in_bytes"], prometheus.CounterValue,
-				float64(d.Stats.BytesIn), addr, s.Protocol.String())
+				float64(d.Stats.BytesIn), addr, proto)
 			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_out_bytes"], prometheus.CounterValue,
-				float64(d.Stats.BytesOut), addr, s.Protocol.String())
+				float64(d.Stats.BytesOut), addr, proto)
 			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_conn"], prometheus.CounterValue,
-				float64(d.Stats.Connections), addr, s.Protocol.String())
+				float64(d.Stats.Connections), addr, proto)
 		}
 	}
 }
