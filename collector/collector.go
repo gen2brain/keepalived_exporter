@@ -411,6 +411,8 @@ func (k *KACollector) parseData() ([]Data, error) {
 					dt.Wantstate = state
 				}
 			}
+		} else if strings.HasPrefix(line, " VRRP Version") {
+			# noop
 		} else {
 			if dt.Iname != "" {
 				data = append(data, dt)
