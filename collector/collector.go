@@ -412,7 +412,7 @@ func (k *KACollector) parseData() ([]Data, error) {
 				}
 			}
 		} else if strings.HasPrefix(line, " VRRP Version") {
-			# noop
+			// noop
 		} else {
 			if dt.Iname != "" {
 				data = append(data, dt)
