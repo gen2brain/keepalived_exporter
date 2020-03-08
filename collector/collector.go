@@ -327,7 +327,7 @@ func (k *KACollector) text() ([]KAStats, error) {
 	}
 
 	if len(data) == len(stats) {
-		for idx, _ := range data {
+		for idx := range data {
 			st := KAStats{}
 			st.Data = data[idx]
 			st.Stats = stats[idx]
@@ -450,7 +450,6 @@ func (k *KACollector) parseStats() ([]Stats, error) {
 			if instance != "" {
 				data = append(data, dt)
 				dt = Stats{}
-				instance = ""
 			}
 
 			sp := strings.Split(strings.TrimSpace(line), prop)
