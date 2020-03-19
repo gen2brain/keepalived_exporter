@@ -286,7 +286,7 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 		return err
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	return nil
 }
 
