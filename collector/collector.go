@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/libnetwork/ipvs"
+	"github.com/moby/ipvs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/shirou/gopsutil/process"
 )
