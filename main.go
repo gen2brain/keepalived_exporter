@@ -39,7 +39,7 @@ func main() {
 
 	http.Handle(*metricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html>
+		_, _ = w.Write([]byte(`<html>
 			<head><title>Keepalived Exporter</title></head>
 			<body>
 			<h1>Keepalived Exporter</h1>

@@ -3,7 +3,7 @@ package collector
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -20,7 +20,7 @@ import (
 // Signals.
 const (
 	SIGRTMIN = syscall.Signal(32)
-	SIGJSON  = syscall.Signal(SIGRTMIN + 4)
+	SIGJSON  = SIGRTMIN + 4
 )
 
 // States.
@@ -210,14 +210,14 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 	svcs, err := k.handle.GetServices()
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
-		log.Printf("keepalived_exporter: %v", err)
+		log.Printf("keepalived_exporter: services: %v", err)
 		return
 	}
 
 	for _, s := range svcs {
 		dsts, err := k.handle.GetDestinations(s)
 		if err != nil {
-			log.Printf("keepalived_exporter: %v", err)
+			log.Printf("keepalived_exporter: destinations: %v", err)
 			continue
 		}
 
@@ -273,17 +273,17 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 	}
 
 	if pid == 0 {
-		return errors.New("cannot find pid")
+		return fmt.Errorf("cannot find pid")
 	}
 
 	proc, err := os.FindProcess(int(pid))
 	if err != nil {
-		return err
+		return fmt.Errorf("process %v: %v", pid, err)
 	}
 
 	err = proc.Signal(sig)
 	if err != nil {
-		return err
+		return fmt.Errorf("signal %v: %v", sig, err)
 	}
 
 	time.Sleep(100 * time.Millisecond)
