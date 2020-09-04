@@ -263,7 +263,7 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 	for _, p := range ps {
 		name, err := p.Name()
 		if err != nil {
-			return err
+			continue
 		}
 
 		if name == "keepalived" {
