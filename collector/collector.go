@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -348,6 +349,15 @@ func (k *KACollector) decodeJson() ([]KAStats, error) {
 	}
 
 	defer f.Close()
+
+	defer func() {
+		files, err := filepath.Glob("/tmp/keepalived.json*")
+		if err == nil {
+			for _, file := range files {
+				_ = os.Remove(file)
+			}
+		}
+	}()
 
 	decoder := json.NewDecoder(f)
 
