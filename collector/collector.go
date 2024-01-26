@@ -2,10 +2,12 @@ package collector
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,7 +17,6 @@ import (
 
 	"github.com/moby/ipvs"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/shirou/gopsutil/process"
 )
 
 // Signals.
@@ -255,20 +256,18 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 
 // signal sends given signal to keepalived process.
 func (k *KACollector) signal(sig syscall.Signal) error {
-	ps, err := process.Processes()
+	ps, err := processes()
 	if err != nil {
 		return err
 	}
 
-	var pid int32
+	var pid int64
 	for _, p := range ps {
-		name, err := p.Name()
-		if err != nil {
-			continue
-		}
-
-		if name == "keepalived" {
-			pid = p.Pid
+		if p[1] == "keepalived" {
+			pid, err = strconv.ParseInt(p[0], 10, 0)
+			if err != nil {
+				return err
+			}
 			break
 		}
 	}
@@ -279,12 +278,12 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 
 	proc, err := os.FindProcess(int(pid))
 	if err != nil {
-		return fmt.Errorf("process %v: %v", pid, err)
+		return fmt.Errorf("process %v: %w", pid, err)
 	}
 
 	err = proc.Signal(sig)
 	if err != nil {
-		return fmt.Errorf("signal %v: %v", sig, err)
+		return fmt.Errorf("signal %v: %w", sig, err)
 	}
 
 	time.Sleep(100 * time.Millisecond)
@@ -540,4 +539,33 @@ func (k *KACollector) parseStats() ([]Stats, error) {
 	}
 
 	return data, nil
+}
+
+// processes returns slice of process fields(pid, comm, pcpu, pmem) from ps command.
+func processes() ([][]string, error) {
+	ret := make([][]string, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	output, err := exec.CommandContext(ctx, "ps", "-axwwo", "pid,pcpu,pmem,args").CombinedOutput()
+	if err != nil {
+		return ret, err
+	}
+
+	// remove trailing newline and header
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")[1:]
+
+	for _, line := range lines {
+		f := strings.Fields(strings.TrimSpace(line))
+		if len(f) > 3 {
+			comm := f[3]
+			if !strings.HasPrefix(comm, "[") {
+				comm = filepath.Base(comm)
+			}
+			ret = append(ret, []string{f[0], comm, f[1], f[2]})
+		}
+	}
+
+	return ret, nil
 }
