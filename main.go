@@ -28,12 +28,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	registry := prometheus.NewRegistry()
-	if coll, err := collector.NewCollector(); err == nil {
-		registry.MustRegister(coll)
-	} else {
+	c, err := collector.New()
+	if err != nil {
 		log.Fatal(err)
 	}
+	defer c.Close()
+
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(c)
 
 	http.Handle(*metricsPath, promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

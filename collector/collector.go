@@ -81,8 +81,8 @@ type Collector struct {
 	mutex   sync.Mutex
 }
 
-// NewCollector creates a Collector.
-func NewCollector() (*Collector, error) {
+// New creates a Collector.
+func New() (*Collector, error) {
 	c := &Collector{}
 
 	labelsVrrp := []string{"name", "intf", "vrid", "state"}
@@ -108,18 +108,21 @@ func NewCollector() (*Collector, error) {
 	c.metrics = metrics
 
 	if handle, err := ipvs.New(""); err == nil {
-		labelsLVS := []string{"addr", "proto"}
+		labelsLvsVip := []string{"addr", "proto"}
 
-		metrics["keepalived_lvs_vip_in_packets"] = prometheus.NewDesc("keepalived_lvs_vip_in_packets", "VIP in packets", labelsLVS, nil)
-		metrics["keepalived_lvs_vip_out_packets"] = prometheus.NewDesc("keepalived_lvs_vip_out_packets", "VIP out packets", labelsLVS, nil)
-		metrics["keepalived_lvs_vip_in_bytes"] = prometheus.NewDesc("keepalived_lvs_vip_in_bytes", "VIP in bytes", labelsLVS, nil)
-		metrics["keepalived_lvs_vip_out_bytes"] = prometheus.NewDesc("keepalived_lvs_vip_out_bytes", "VIP out bytes", labelsLVS, nil)
-		metrics["keepalived_lvs_vip_conn"] = prometheus.NewDesc("keepalived_lvs_vip_conn", "VIP connections", labelsLVS, nil)
-		metrics["keepalived_lvs_rs_in_packets"] = prometheus.NewDesc("keepalived_lvs_rs_in_packets", "RS in packets", labelsLVS, nil)
-		metrics["keepalived_lvs_rs_out_packets"] = prometheus.NewDesc("keepalived_lvs_rs_out_packets", "RS out packets", labelsLVS, nil)
-		metrics["keepalived_lvs_rs_in_bytes"] = prometheus.NewDesc("keepalived_lvs_rs_in_bytes", "RS in bytes", labelsLVS, nil)
-		metrics["keepalived_lvs_rs_out_bytes"] = prometheus.NewDesc("keepalived_lvs_rs_out_bytes", "RS out bytes", labelsLVS, nil)
-		metrics["keepalived_lvs_rs_conn"] = prometheus.NewDesc("keepalived_lvs_rs_conn", "RS connections", labelsLVS, nil)
+		metrics["keepalived_lvs_vip_in_packets"] = prometheus.NewDesc("keepalived_lvs_vip_in_packets", "VIP in packets", labelsLvsVip, nil)
+		metrics["keepalived_lvs_vip_out_packets"] = prometheus.NewDesc("keepalived_lvs_vip_out_packets", "VIP out packets", labelsLvsVip, nil)
+		metrics["keepalived_lvs_vip_in_bytes"] = prometheus.NewDesc("keepalived_lvs_vip_in_bytes", "VIP in bytes", labelsLvsVip, nil)
+		metrics["keepalived_lvs_vip_out_bytes"] = prometheus.NewDesc("keepalived_lvs_vip_out_bytes", "VIP out bytes", labelsLvsVip, nil)
+		metrics["keepalived_lvs_vip_conn"] = prometheus.NewDesc("keepalived_lvs_vip_conn", "VIP connections", labelsLvsVip, nil)
+
+		labelsLvsRs := []string{"vip", "addr", "proto"}
+
+		metrics["keepalived_lvs_rs_in_packets"] = prometheus.NewDesc("keepalived_lvs_rs_in_packets", "RS in packets", labelsLvsRs, nil)
+		metrics["keepalived_lvs_rs_out_packets"] = prometheus.NewDesc("keepalived_lvs_rs_out_packets", "RS out packets", labelsLvsRs, nil)
+		metrics["keepalived_lvs_rs_in_bytes"] = prometheus.NewDesc("keepalived_lvs_rs_in_bytes", "RS in bytes", labelsLvsRs, nil)
+		metrics["keepalived_lvs_rs_out_bytes"] = prometheus.NewDesc("keepalived_lvs_rs_out_bytes", "RS out bytes", labelsLvsRs, nil)
+		metrics["keepalived_lvs_rs_conn"] = prometheus.NewDesc("keepalived_lvs_rs_conn", "RS connections", labelsLvsRs, nil)
 
 		c.handle = handle
 	}
@@ -127,26 +130,33 @@ func NewCollector() (*Collector, error) {
 	return c, nil
 }
 
+// Close closes the ipvs handle.
+func (c *Collector) Close() {
+	if c.handle != nil {
+		c.Close()
+	}
+}
+
 // Describe outputs metrics descriptions.
-func (k *Collector) Describe(ch chan<- *prometheus.Desc) {
-	for _, m := range k.metrics {
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
+	for _, m := range c.metrics {
 		ch <- m
 	}
 }
 
 // Collect fetches metrics from and sends them to the provided channel.
-func (k *Collector) Collect(ch chan<- prometheus.Metric) {
-	k.mutex.Lock()
-	defer k.mutex.Unlock()
+func (c *Collector) Collect(ch chan<- prometheus.Metric) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 
-	ka, err := k.decode()
+	ka, err := c.decode()
 	if err != nil {
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_up"], prometheus.GaugeValue, 0)
 		log.Printf("keepalived_exporter: %v", err)
 		return
 	}
 
-	ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 1)
+	ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_up"], prometheus.GaugeValue, 1)
 
 	for _, st := range ka {
 		var state string
@@ -154,87 +164,87 @@ func (k *Collector) Collect(ch chan<- prometheus.Metric) {
 			state = states[st.Data.State]
 		}
 
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_rcvd"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_advert_rcvd"], prometheus.CounterValue,
 			float64(st.Stats.AdvertRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_sent"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_advert_sent"], prometheus.CounterValue,
 			float64(st.Stats.AdvertSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_become_master"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_become_master"], prometheus.CounterValue,
 			float64(st.Stats.BecomeMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_release_master"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_release_master"], prometheus.CounterValue,
 			float64(st.Stats.ReleaseMaster), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_packet_len_err"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_packet_len_err"], prometheus.CounterValue,
 			float64(st.Stats.PacketLenErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_interval_err"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_advert_interval_err"], prometheus.CounterValue,
 			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_ip_ttl_err"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_ip_ttl_err"], prometheus.CounterValue,
 			float64(st.Stats.AdvertIntervalErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_invalid_type_rcvd"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_invalid_type_rcvd"], prometheus.CounterValue,
 			float64(st.Stats.InvalidTypeRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_addr_list_err"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_addr_list_err"], prometheus.CounterValue,
 			float64(st.Stats.AddrListErr), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_invalid_authtype"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_invalid_authtype"], prometheus.CounterValue,
 			float64(st.Stats.InvalidAuthtype), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_authtype_mismatch"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_authtype_mismatch"], prometheus.CounterValue,
 			float64(st.Stats.AuthtypeMismatch), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_auth_failure"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_auth_failure"], prometheus.CounterValue,
 			float64(st.Stats.AuthFailure), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_pri_zero_rcvd"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_pri_zero_rcvd"], prometheus.CounterValue,
 			float64(st.Stats.PriZeroRcvd), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_pri_zero_sent"], prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_vrrp_pri_zero_sent"], prometheus.CounterValue,
 			float64(st.Stats.PriZeroSent), st.Data.Iname, st.Data.IfpIfname, strconv.Itoa(st.Data.Vrid), state)
 	}
 
-	if k.handle == nil {
+	if c.handle == nil {
 		return
 	}
 
-	svcs, err := k.handle.GetServices()
+	svcs, err := c.handle.GetServices()
 	if err != nil {
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_up"], prometheus.GaugeValue, 0)
 		log.Printf("keepalived_exporter: services: %v", err)
 		return
 	}
 
 	for _, s := range svcs {
-		dsts, err := k.handle.GetDestinations(s)
+		dsts, err := c.handle.GetDestinations(s)
 		if err != nil {
 			log.Printf("keepalived_exporter: destinations: %v", err)
 			continue
 		}
 
-		addr := s.Address.String() + ":" + strconv.Itoa(int(s.Port))
+		vip := s.Address.String() + ":" + strconv.Itoa(int(s.Port))
 		proto := strconv.Itoa(int(s.Protocol))
 
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_in_packets"], prometheus.CounterValue,
-			float64(s.Stats.PacketsIn), addr, proto)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_out_packets"], prometheus.CounterValue,
-			float64(s.Stats.PacketsOut), addr, proto)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_in_bytes"], prometheus.CounterValue,
-			float64(s.Stats.BytesIn), addr, proto)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_out_bytes"], prometheus.CounterValue,
-			float64(s.Stats.BytesOut), addr, proto)
-		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_vip_conn"], prometheus.CounterValue,
-			float64(s.Stats.Connections), addr, proto)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_vip_in_packets"], prometheus.CounterValue,
+			float64(s.Stats.PacketsIn), vip, proto)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_vip_out_packets"], prometheus.CounterValue,
+			float64(s.Stats.PacketsOut), vip, proto)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_vip_in_bytes"], prometheus.CounterValue,
+			float64(s.Stats.BytesIn), vip, proto)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_vip_out_bytes"], prometheus.CounterValue,
+			float64(s.Stats.BytesOut), vip, proto)
+		ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_vip_conn"], prometheus.CounterValue,
+			float64(s.Stats.Connections), vip, proto)
 
 		for _, d := range dsts {
 			addr := d.Address.String() + ":" + strconv.Itoa(int(d.Port))
 
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_in_packets"], prometheus.CounterValue,
-				float64(d.Stats.PacketsIn), addr, proto)
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_out_packets"], prometheus.CounterValue,
-				float64(d.Stats.PacketsOut), addr, proto)
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_in_bytes"], prometheus.CounterValue,
-				float64(d.Stats.BytesIn), addr, proto)
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_out_bytes"], prometheus.CounterValue,
-				float64(d.Stats.BytesOut), addr, proto)
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_lvs_rs_conn"], prometheus.CounterValue,
-				float64(d.Stats.Connections), addr, proto)
+			ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_rs_in_packets"], prometheus.CounterValue,
+				float64(d.Stats.PacketsIn), vip, addr, proto)
+			ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_rs_out_packets"], prometheus.CounterValue,
+				float64(d.Stats.PacketsOut), vip, addr, proto)
+			ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_rs_in_bytes"], prometheus.CounterValue,
+				float64(d.Stats.BytesIn), vip, addr, proto)
+			ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_rs_out_bytes"], prometheus.CounterValue,
+				float64(d.Stats.BytesOut), vip, addr, proto)
+			ch <- prometheus.MustNewConstMetric(c.metrics["keepalived_lvs_rs_conn"], prometheus.CounterValue,
+				float64(d.Stats.Connections), vip, addr, proto)
 		}
 	}
 }
 
 // signal sends given signal to keepalived process.
-func (k *Collector) signal(sig syscall.Signal) error {
+func (c *Collector) signal(sig syscall.Signal) error {
 	ps, err := processes()
 	if err != nil {
 		return err
@@ -272,10 +282,10 @@ func (k *Collector) signal(sig syscall.Signal) error {
 }
 
 // decode decodes stats from json file.
-func (k *Collector) decode() ([]KA, error) {
+func (c *Collector) decode() ([]KA, error) {
 	ka := make([]KA, 0)
 
-	err := k.signal(SIGJSON)
+	err := c.signal(SIGJSON)
 	if err != nil {
 		return ka, err
 	}
