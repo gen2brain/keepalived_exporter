@@ -10,7 +10,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -o keepalived_exporter -ldflags "-s -w"
+RUN CGO_ENABLED=0 go build -o keepalived_exporter -trimpath -ldflags "-s -w"
 
 
 FROM scratch

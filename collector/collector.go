@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,23 +33,15 @@ const (
 )
 
 // States map.
-var string2state = map[string]int{
-	"INIT":   Init,
-	"BACKUP": Backup,
-	"MASTER": Master,
-	"FAULT":  Fault,
-}
-
-// States map.
-var state2string = map[int]string{
+var states = map[int]string{
 	Init:   "INIT",
 	Backup: "BACKUP",
 	Master: "MASTER",
 	Fault:  "FAULT",
 }
 
-// KAStats type.
-type KAStats struct {
+// KA type.
+type KA struct {
 	Data  Data  `json:"data"`
 	Stats Stats `json:"stats"`
 }
@@ -83,20 +74,19 @@ type Stats struct {
 	PriZeroSent       int `json:"pri_zero_sent"`
 }
 
-// KACollector type.
-type KACollector struct {
-	useJSON bool
+// Collector type.
+type Collector struct {
 	metrics map[string]*prometheus.Desc
 	handle  *ipvs.Handle
 	mutex   sync.Mutex
 }
 
-// NewKACollector creates an KACollector.
-func NewKACollector(useJSON bool) (*KACollector, error) {
-	coll := &KACollector{}
-	coll.useJSON = useJSON
+// NewCollector creates a Collector.
+func NewCollector() (*Collector, error) {
+	c := &Collector{}
 
 	labelsVrrp := []string{"name", "intf", "vrid", "state"}
+
 	metrics := map[string]*prometheus.Desc{
 		"keepalived_up":                       prometheus.NewDesc("keepalived_up", "Status", nil, nil),
 		"keepalived_vrrp_advert_rcvd":         prometheus.NewDesc("keepalived_vrrp_advert_rcvd", "Advertisements received", labelsVrrp, nil),
@@ -115,8 +105,11 @@ func NewKACollector(useJSON bool) (*KACollector, error) {
 		"keepalived_vrrp_pri_zero_sent":       prometheus.NewDesc("keepalived_vrrp_pri_zero_sent", "Priority zero sent", labelsVrrp, nil),
 	}
 
+	c.metrics = metrics
+
 	if handle, err := ipvs.New(""); err == nil {
 		labelsLVS := []string{"addr", "proto"}
+
 		metrics["keepalived_lvs_vip_in_packets"] = prometheus.NewDesc("keepalived_lvs_vip_in_packets", "VIP in packets", labelsLVS, nil)
 		metrics["keepalived_lvs_vip_out_packets"] = prometheus.NewDesc("keepalived_lvs_vip_out_packets", "VIP out packets", labelsLVS, nil)
 		metrics["keepalived_lvs_vip_in_bytes"] = prometheus.NewDesc("keepalived_lvs_vip_in_bytes", "VIP in bytes", labelsLVS, nil)
@@ -128,51 +121,37 @@ func NewKACollector(useJSON bool) (*KACollector, error) {
 		metrics["keepalived_lvs_rs_out_bytes"] = prometheus.NewDesc("keepalived_lvs_rs_out_bytes", "RS out bytes", labelsLVS, nil)
 		metrics["keepalived_lvs_rs_conn"] = prometheus.NewDesc("keepalived_lvs_rs_conn", "RS connections", labelsLVS, nil)
 
-		coll.handle = handle
+		c.handle = handle
 	}
 
-	coll.metrics = metrics
-
-	return coll, nil
+	return c, nil
 }
 
 // Describe outputs metrics descriptions.
-func (k *KACollector) Describe(ch chan<- *prometheus.Desc) {
+func (k *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, m := range k.metrics {
 		ch <- m
 	}
 }
 
 // Collect fetches metrics from and sends them to the provided channel.
-func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
+func (k *Collector) Collect(ch chan<- prometheus.Metric) {
 	k.mutex.Lock()
 	defer k.mutex.Unlock()
 
-	var err error
-	var kaStats []KAStats
-
-	if k.useJSON {
-		kaStats, err = k.json()
-		if err != nil {
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
-			log.Printf("keepalived_exporter: %v", err)
-			return
-		}
-	} else {
-		kaStats, err = k.text()
-		if err != nil {
-			ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
-			log.Printf("keepalived_exporter: %v", err)
-			return
-		}
+	ka, err := k.decode()
+	if err != nil {
+		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 0)
+		log.Printf("keepalived_exporter: %v", err)
+		return
 	}
 
 	ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_up"], prometheus.GaugeValue, 1)
 
-	for _, st := range kaStats {
-		state := ""
-		if _, ok := state2string[st.Data.State]; ok {
-			state = state2string[st.Data.State]
+	for _, st := range ka {
+		var state string
+		if _, ok := states[st.Data.State]; ok {
+			state = states[st.Data.State]
 		}
 
 		ch <- prometheus.MustNewConstMetric(k.metrics["keepalived_vrrp_advert_rcvd"], prometheus.CounterValue,
@@ -255,7 +234,7 @@ func (k *KACollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // signal sends given signal to keepalived process.
-func (k *KACollector) signal(sig syscall.Signal) error {
+func (k *Collector) signal(sig syscall.Signal) error {
 	ps, err := processes()
 	if err != nil {
 		return err
@@ -268,6 +247,7 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 			if err != nil {
 				return err
 			}
+
 			break
 		}
 	}
@@ -278,267 +258,51 @@ func (k *KACollector) signal(sig syscall.Signal) error {
 
 	proc, err := os.FindProcess(int(pid))
 	if err != nil {
-		return fmt.Errorf("process %v: %w", pid, err)
+		return fmt.Errorf("cannot find process for pid %d: %w", pid, err)
 	}
 
 	err = proc.Signal(sig)
 	if err != nil {
-		return fmt.Errorf("signal %v: %w", sig, err)
+		return fmt.Errorf("cannot send signal %v: %w", sig, err)
 	}
 
 	time.Sleep(100 * time.Millisecond)
+
 	return nil
 }
 
-// json returns slice of KAStats from json file.
-func (k *KACollector) json() ([]KAStats, error) {
-	kaStats := make([]KAStats, 0)
+// decode decodes stats from json file.
+func (k *Collector) decode() ([]KA, error) {
+	ka := make([]KA, 0)
 
 	err := k.signal(SIGJSON)
 	if err != nil {
-		return kaStats, err
+		return ka, err
 	}
-
-	return k.decodeJson()
-}
-
-// text returns slice of KAStats from text files.
-func (k *KACollector) text() ([]KAStats, error) {
-	kaStats := make([]KAStats, 0)
-
-	err := k.signal(syscall.SIGUSR1)
-	if err != nil {
-		return kaStats, err
-	}
-
-	err = k.signal(syscall.SIGUSR2)
-	if err != nil {
-		return kaStats, err
-	}
-
-	data, err := k.parseData()
-	if err != nil {
-		return kaStats, err
-	}
-
-	stats, err := k.parseStats()
-	if err != nil {
-		return kaStats, err
-	}
-
-	if len(data) == len(stats) {
-		for idx := range data {
-			st := KAStats{}
-			st.Data = data[idx]
-			st.Stats = stats[idx]
-			kaStats = append(kaStats, st)
-		}
-	}
-
-	return kaStats, nil
-}
-
-// decodeJson decodes stats from json file.
-func (k *KACollector) decodeJson() ([]KAStats, error) {
-	stats := make([]KAStats, 0)
 
 	f, err := os.Open("/tmp/keepalived.json")
 	if err != nil {
-		return stats, err
+		return ka, err
 	}
-
 	defer f.Close()
 
 	defer func() {
 		files, err := filepath.Glob("/tmp/keepalived.json*")
 		if err == nil {
 			for _, file := range files {
-				_ = os.Remove(file)
+				if file != "/tmp/keepalived.json" {
+					_ = os.Remove(file)
+				}
 			}
 		}
 	}()
 
-	decoder := json.NewDecoder(f)
-
-	err = decoder.Decode(&stats)
+	err = json.NewDecoder(f).Decode(&ka)
 	if err != nil {
-		return stats, err
+		return ka, err
 	}
 
-	return stats, nil
-}
-
-// parseData decodes data from text file.
-func (k *KACollector) parseData() ([]Data, error) {
-	data := make([]Data, 0)
-
-	f, err := os.Open("/tmp/keepalived.data")
-	if err != nil {
-		return data, err
-	}
-
-	defer f.Close()
-
-	sep := "VRRP Instance"
-	prop := "="
-
-	dt := Data{}
-	scanner := bufio.NewScanner(bufio.NewReader(f))
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, " "+sep) && strings.Contains(line, prop) {
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			dt.Iname = strings.TrimSpace(sp[1])
-		} else if strings.HasPrefix(line, "   ") && strings.Contains(line, prop) && dt.Iname != "" {
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			key := strings.TrimSpace(sp[0])
-			val := strings.TrimSpace(sp[1])
-			switch key {
-			case "Interface":
-				dt.IfpIfname = val
-			case "Last transition":
-				lt, err := strconv.ParseFloat(strings.Split(val, " ")[0], 64)
-				if err != nil {
-					return data, err
-				}
-
-				dt.LastTransition = lt
-			case "Virtual Router ID":
-				id, err := strconv.Atoi(val)
-				if err != nil {
-					return data, err
-				}
-
-				dt.Vrid = id
-			case "State":
-				if state, ok := string2state[val]; ok {
-					dt.State = state
-				}
-			case "Wantstate":
-				if state, ok := string2state[val]; ok {
-					dt.Wantstate = state
-				}
-			}
-		} else if strings.HasPrefix(line, " VRRP Version") {
-			// noop
-		} else {
-			if dt.Iname != "" {
-				data = append(data, dt)
-				dt = Data{}
-			}
-		}
-	}
-
-	return data, nil
-}
-
-// parseStats decodes stats from text file.
-func (k *KACollector) parseStats() ([]Stats, error) {
-	data := make([]Stats, 0)
-
-	f, err := os.Open("/tmp/keepalived.stats")
-	if err != nil {
-		return data, err
-	}
-
-	defer f.Close()
-
-	sep := "VRRP Instance"
-	prop := ":"
-
-	dt := Stats{}
-	scanner := bufio.NewScanner(bufio.NewReader(f))
-
-	section := ""
-	instance := ""
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, sep) && strings.Contains(line, prop) {
-			if instance != "" {
-				data = append(data, dt)
-				dt = Stats{}
-			}
-
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			instance = strings.TrimSpace(sp[1])
-		} else if strings.HasPrefix(line, "  ") && strings.HasSuffix(line, prop) {
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			section = strings.TrimSpace(sp[0])
-		} else if strings.HasPrefix(line, "    ") && section != "" {
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			key := strings.TrimSpace(sp[0])
-			val := strings.TrimSpace(sp[1])
-
-			value, err := strconv.Atoi(val)
-			if err != nil {
-				return data, err
-			}
-
-			switch section {
-			case "Advertisements":
-				switch key {
-				case "Received":
-					dt.AdvertRcvd = value
-				case "Sent":
-					dt.AdvertSent = value
-				}
-			case "Packet Errors":
-				switch key {
-				case "Length":
-					dt.PacketLenErr = value
-				case "TTL":
-					dt.IPTTLErr = value
-				case "Invalid Type":
-					dt.InvalidTypeRcvd = value
-				case "Advertisement Interval":
-					dt.AdvertIntervalErr = value
-				case "Address List":
-					dt.AddrListErr = value
-				}
-			case "Authentication Errors":
-				switch key {
-				case "Invalid Type":
-					dt.InvalidAuthtype = value
-				case "Type Mismatch":
-					dt.AuthtypeMismatch = value
-				case "Failure":
-					dt.AuthFailure = value
-				}
-			case "Priority Zero":
-				switch key {
-				case "Received":
-					dt.PriZeroRcvd = value
-				case "Sent":
-					dt.PriZeroSent = value
-				}
-			}
-		} else if strings.HasPrefix(line, "  ") && !strings.HasSuffix(line, prop) && !strings.HasPrefix(line, "    ") {
-			sp := strings.Split(strings.TrimSpace(line), prop)
-			key := strings.TrimSpace(sp[0])
-			val := strings.TrimSpace(sp[1])
-			section = ""
-
-			value, err := strconv.Atoi(val)
-			if err != nil {
-				return data, err
-			}
-
-			switch key {
-			case "Became master":
-				dt.BecomeMaster = value
-			case "Released master":
-				dt.ReleaseMaster = value
-			}
-		}
-	}
-
-	if instance != "" {
-		data = append(data, dt)
-	}
-
-	return data, nil
+	return ka, nil
 }
 
 // processes returns slice of process fields(pid, comm, pcpu, pmem) from ps command.
