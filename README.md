@@ -4,7 +4,7 @@ Prometheus exporter for [Keepalived](https://keepalived.org) metrics.
 
 ### Installation
 
-    go get -u github.com/gen2brain/keepalived_exporter
+    go install github.com/gen2brain/keepalived_exporter@latest
 
 ### Usage
 
