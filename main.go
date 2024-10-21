@@ -49,7 +49,7 @@ func main() {
 	})
 
 	srv := &http.Server{}
-	listener, err := net.Listen("tcp4", *listenAddr)
+	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
