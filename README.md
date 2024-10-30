@@ -6,7 +6,8 @@ Prometheus exporter for [Keepalived](https://keepalived.org) metrics.
 
     go install github.com/gen2brain/keepalived_exporter@latest
 
-**Note:** Requirement is to have Keepalived compiled with `--enable-json` option. You can check with `keepalived -v`.
+**Note:** Requirement is to have Keepalived compiled with `--enable-json` option.
+You can check with `keepalived -v`.
 
 ### Usage
 
