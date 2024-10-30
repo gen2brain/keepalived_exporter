@@ -6,6 +6,8 @@ Prometheus exporter for [Keepalived](https://keepalived.org) metrics.
 
     go install github.com/gen2brain/keepalived_exporter@latest
 
+**Note:** Requirement is to have Keepalived compiled with `--enable-json` option. You can check with `keepalived -v`.
+
 ### Usage
 
 | Name               | Description                                                                |
@@ -13,8 +15,6 @@ Prometheus exporter for [Keepalived](https://keepalived.org) metrics.
 | web.listen-address | Address to listen on for web interface and telemetry, defaults to `:9650`. |
 | web.telemetry-path | Path under which to expose metrics, defaults to `/metrics`.                |
 | version            | Display version information.                                               |
-
-**Note:** Requirement is to have Keepalived compiled with `--enable-json` configure option.
 
 ### Metrics
 
